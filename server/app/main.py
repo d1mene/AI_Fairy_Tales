@@ -1,10 +1,16 @@
 from fastapi import FastAPI
-from app.db.session import engine, get_db
+from fastapi.middleware.cors import CORSMiddleware
+from app.db.session import engine
+from app.config import settings
 import contextlib
 import asyncio
 from sqlalchemy.exc import OperationalError
 from alembic.config import Config
 from alembic import command
+
+from app.handlers.users import router as users_router
+from app.handlers.tales import router as tales_router
+from app.handlers.profile import router as profile_router
 
 def run_migrations():
     alembic_cfg = Config("alembic.ini")
@@ -33,8 +39,29 @@ async def lifespan(app: FastAPI):
     await init_db()
     yield
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    title=settings.APP_NAME,
+    description="API для генерации сказок",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(users_router)
+app.include_router(tales_router)
+app.include_router(profile_router)
 
 @app.get('/')
 async def root():
-    return {'message': 'success'}
+    return {'message': 'AI Fairy Tales API', 'docs': '/docs', 'health': '/health'}
+
+@app.get('/health')
+async def health():
+    return {'status': 'healthy'}
