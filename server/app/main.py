@@ -11,6 +11,7 @@ from alembic import command
 from app.handlers.users import router as users_router
 from app.handlers.tales import router as tales_router
 from app.handlers.profile import router as profile_router
+from app.handlers.register import router as register_router
 
 def run_migrations():
     alembic_cfg = Config("alembic.ini")
@@ -57,6 +58,7 @@ app.add_middleware(
 app.include_router(users_router)
 app.include_router(tales_router)
 app.include_router(profile_router)
+app.include_router(register_router)
 
 @app.get('/')
 async def root():
