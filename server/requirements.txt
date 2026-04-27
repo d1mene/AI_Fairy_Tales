@@ -31,3 +31,4 @@ python-jose
 bcrypt==4.0.1
 passlib[bcrypt]
 python-multipart
+openai>=1.0.0

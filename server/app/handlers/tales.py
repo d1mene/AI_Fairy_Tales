@@ -87,7 +87,7 @@ async def add_message(
     if len(tale.content) >= tale.size:
         raise HTTPException(status_code=400, detail="Сказка уже закончена")
 
-    result = await tale_service.add_message(db, tale, request.message)
+    result = await tale_service.add_message(db, tale, request.message, current_user)
 
     # FIX: сервис возвращает assistant_response/part_number,
     #      схема ожидает response/stage — маппим явно.

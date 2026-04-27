@@ -17,7 +17,6 @@ services:
       - DATABASE_URL=mysql+aiomysql://user:password@db:3306/db
       - SECRET_KEY=my-super-secret-key-for-development
       - DEBUG=True
-      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
     networks:
       - fairy_tales_network
     restart: always
