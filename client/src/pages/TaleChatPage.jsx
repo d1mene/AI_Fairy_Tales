@@ -3,32 +3,91 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import { useAuth } from '../context/AuthContext'
 
+// ── PDF / print helpers ────────────────────────────────────────
+function buildPrintHtml(tale, messages) {
+  const parts = messages
+    .filter(m => m.role === 'bot')
+    .map((m, i) => `<div class="part"><h2>Часть ${i + 1}</h2><p>${m.text.replace(/\n/g, '<br>')}</p></div>`)
+    .join('')
+
+  return `<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>${tale.name}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;1,400&family=Cinzel:wght@600&display=swap');
+  body { font-family:'EB Garamond',Georgia,serif; max-width:680px; margin:3rem auto; color:#1a1a1a; line-height:1.75; }
+  h1   { font-family:'Cinzel',serif; text-align:center; font-size:1.8rem; margin-bottom:.3rem; }
+  .meta{ text-align:center; color:#666; font-style:italic; margin-bottom:2.5rem; }
+  .part{ margin-bottom:2rem; }
+  h2   { font-family:'Cinzel',serif; font-size:1rem; letter-spacing:.15em; color:#555; margin-bottom:.5rem; }
+  p    { margin:0; }
+  @media print { body { margin:1.5cm; } }
+</style>
+</head>
+<body>
+  <h1>${tale.name}</h1>
+  <p class="meta">${tale.genre} &nbsp;·&nbsp; ${messages.filter(m=>m.role==='bot').length} частей</p>
+  ${parts}
+</body>
+</html>`
+}
+
+function downloadHtml(tale, messages) {
+  const html = buildPrintHtml(tale, messages)
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href     = url
+  a.download = `${tale.name}.html`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function openPrintWindow(tale, messages) {
+  const html = buildPrintHtml(tale, messages)
+  const win  = window.open('', '_blank')
+  win.document.write(html)
+  win.document.close()
+  win.focus()
+  setTimeout(() => win.print(), 600)   // ждём загрузки шрифтов
+}
+
+// ── Component ──────────────────────────────────────────────────
 export default function TaleChatPage() {
   const nav = useNavigate()
   const { userId } = useAuth()
 
-  const [tale, setTale]       = useState(null)
-  const [messages, setMessages] = useState([])   // {role:'bot'|'user', text, part?}
-  const [input, setInput]     = useState('')
-  const [loading, setLoading] = useState(true)
-  const [sending, setSending] = useState(false)
+  const [tale, setTale]         = useState(null)
+  const [messages, setMessages] = useState([])
+  const [input, setInput]       = useState('')
+  const [loading, setLoading]   = useState(true)
+  const [sending, setSending]   = useState(false)
   const [completing, setCompleting] = useState(false)
-  const [error, setError]     = useState('')
+  const [error, setError]       = useState('')
 
   const bottomRef = useRef(null)
 
-  // ── Load current tale ──────────────────────────────────────
+  // Порядковый номер части среди бот-сообщений
+  function botIndex(msgs, i) {
+    return msgs.slice(0, i + 1).filter(m => m.role === 'bot').length
+  }
+
+  // ── Load ─────────────────────────────────────────────────────
   useEffect(() => {
     async function load() {
       try {
         const t = await api.getCurrentTale(userId)
         setTale(t)
 
-        // Rebuild messages from saved content array
         const msgs = []
-        t.content.forEach((entry, i) => {
-          msgs.push({ role: 'bot',  text: entry.assistant_response ?? entry.response ?? '', part: i + 1 })
-          if (entry.user_message) {
+        t.content.forEach((entry) => {
+          if (entry.assistant_response) {
+            msgs.push({ role: 'bot', text: entry.assistant_response })
+          }
+          // Скрываем стартовый триггер
+          if (entry.user_message && entry.user_message !== 'Начни историю') {
             msgs.push({ role: 'user', text: entry.user_message })
           }
         })
@@ -43,44 +102,30 @@ export default function TaleChatPage() {
     load()
   }, [userId])
 
-  // Auto-scroll
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  }, [messages, sending])
 
-  // ── Send message ───────────────────────────────────────────
+  // ── Send ──────────────────────────────────────────────────────
   async function sendMessage() {
     if (!input.trim() || sending) return
     const text = input.trim()
-    setInput('')
-    setSending(true)
-    setError('')
+    setInput(''); setSending(true); setError('')
 
     setMessages(m => [...m, { role: 'user', text }])
 
     try {
       const res = await api.addMessage(userId, text)
-
-      setMessages(m => [...m, {
-        role: 'bot',
-        text: res.response,
-        part: res.stage,
-      }])
-
-      if (res.is_completed) {
-        setTale(t => ({ ...t, current_stage: res.stage, is_completed: true }))
-      } else {
-        setTale(t => ({ ...t, current_stage: res.stage }))
-      }
+      setMessages(m => [...m, { role: 'bot', text: res.response }])
+      setTale(t => ({ ...t, current_stage: res.stage, is_completed: res.is_completed }))
     } catch (err) {
       setError(err.message)
-      setMessages(m => m.slice(0, -1)) // remove optimistic user message
+      setMessages(m => m.slice(0, -1))
     } finally {
       setSending(false)
     }
   }
 
-  // ── Complete tale ─────────────────────────────────────────
   async function handleComplete() {
     setCompleting(true); setError('')
     try {
@@ -97,10 +142,9 @@ export default function TaleChatPage() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
   }
 
-  // ── Computed ───────────────────────────────────────────────
-  const stage     = tale?.current_stage ?? 0
-  const totalParts = tale?.size ?? 1
-  const progress  = Math.min(stage / totalParts, 1)
+  const totalParts  = tale?.size ?? 1
+  const stage       = tale?.current_stage ?? 0
+  const progress    = Math.min(stage / totalParts, 1)
   const isCompleted = tale?.is_completed
 
   if (loading) return (
@@ -121,39 +165,27 @@ export default function TaleChatPage() {
           <div className="chat-title">{tale?.name ?? 'Сказка'}</div>
           <div className="chat-meta">{tale?.genre}</div>
         </div>
-
         <div className="progress-wrap" style={{ minWidth: 160 }}>
           <span>{stage} / {totalParts}</span>
           <div className="progress-bar">
             <div className="progress-fill" style={{ width: `${progress * 100}%` }} />
           </div>
         </div>
-
         <button className="btn btn-ghost btn-sm" onClick={() => nav('/profile')}>← Профиль</button>
       </div>
 
-      {/* Error */}
       {error && <div className="alert alert-error">{error}</div>}
 
       {/* Messages */}
       <div className="chat-messages">
-        {messages.length === 0 && (
-          <div style={{ textAlign: 'center', color: 'var(--text-dim)', marginTop: '2rem', fontStyle: 'italic' }}>
-            ✦ Напишите что-нибудь, чтобы начать историю ✦
-          </div>
-        )}
-
         {messages.map((msg, i) => {
-          const showPartLabel = msg.role === 'bot' && msg.part != null
+          const isBot  = msg.role === 'bot'
+          const partNum = isBot ? botIndex(messages, i) : null
           return (
             <div key={i}>
-              {showPartLabel && (
-                <div className="part-sep">Часть {msg.part}</div>
-              )}
+              {isBot && <div className="part-sep">Часть {partNum}</div>}
               <div className={`msg msg-${msg.role}`}>
-                <div className="msg-label">
-                  {msg.role === 'bot' ? '✦ Рассказчик' : 'Вы'}
-                </div>
+                <div className="msg-label">{isBot ? '✦ Рассказчик' : 'Вы'}</div>
                 <div className="bubble">{msg.text}</div>
               </div>
             </div>
@@ -166,21 +198,43 @@ export default function TaleChatPage() {
             <div className="bubble streaming">Сочиняет</div>
           </div>
         )}
-
         <div ref={bottomRef} />
       </div>
 
-      {/* Completed */}
+      {/* Footer */}
       {isCompleted ? (
+        /* ── Завершение ── */
         <div className="tale-done">
-          <h3>✦ Конец ✦</h3>
-          <p>История завершена. Спасибо, что были частью этого путешествия.</p>
-          <button className="btn btn-primary" onClick={() => nav('/tale/new')}>
-            ✦ Новая сказка
-          </button>
+          <h3>✦ Конец истории ✦</h3>
+          <p style={{ marginBottom: '1.5rem' }}>
+            История завершена. Сохраните её, чтобы перечитать позже.
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '.75rem', maxWidth: 360, margin: '0 auto' }}>
+            {/* PDF через браузерный print */}
+            <button
+              className="btn btn-primary"
+              onClick={() => openPrintWindow(tale, messages)}
+            >
+              🖨 Сохранить как PDF
+            </button>
+
+            {/* HTML-файл с вёрсткой */}
+            <button
+              className="btn"
+              onClick={() => downloadHtml(tale, messages)}
+            >
+              📄 Скачать как HTML
+            </button>
+
+            <div className="orn">✦</div>
+
+            <button className="btn btn-ghost" onClick={() => nav('/tale/new')}>
+              ✦ Начать новую сказку
+            </button>
+          </div>
         </div>
       ) : (
-        /* Input */
         <div className="chat-input-area">
           <textarea
             value={input}

@@ -5,9 +5,9 @@ import { useAuth } from '../context/AuthContext'
 
 const SIZES = [
   { value: 'tiny',   icon: '🌱', name: 'Крошечная', parts: '3 части' },
-  { value: 'small',  icon: '📖', name: 'Маленькая', parts: '5 частей' },
-  { value: 'medium', icon: '📚', name: 'Средняя',   parts: '8 частей' },
-  { value: 'large',  icon: '🏰', name: 'Большая',   parts: '12 частей' },
+  { value: 'small',  icon: '📖', name: 'Маленькая', parts: '8 частей' },
+  { value: 'medium', icon: '📚', name: 'Средняя',   parts: '16 частей' },
+  { value: 'large',  icon: '🏰', name: 'Большая',   parts: '32 части' },
 ]
 
 const GENRES = [
@@ -15,32 +15,46 @@ const GENRES = [
   'Детская сказка', 'Легенда', 'Притча', 'Другой',
 ]
 
+const STATUS = {
+  idle:      null,
+  creating:  'Создаём сказку…',
+  starting:  'Генерируем первую часть…',
+}
+
 export default function TaleCreatePage() {
   const nav = useNavigate()
   const { userId } = useAuth()
 
-  const [form, setForm] = useState({ name: '', genre: GENRES[0], size: 'small' })
-  const [error, setError]   = useState('')
-  const [loading, setLoading] = useState(false)
+  const [form, setForm]   = useState({ name: '', genre: GENRES[0], size: 'small' })
+  const [phase, setPhase] = useState('idle')   // 'idle' | 'creating' | 'starting'
+  const [error, setError] = useState('')
 
   const set = (k) => (v) => setForm(f => ({ ...f, [k]: v }))
+  const loading = phase !== 'idle'
 
   async function handleCreate(e) {
     e.preventDefault()
     if (!form.name.trim()) return setError('Придумайте название сказки')
-    setError(''); setLoading(true)
+    setError('')
+
     try {
+      // 1. Создаём сказку
+      setPhase('creating')
       await api.createTale(userId, { name: form.name, genre: form.genre, size: form.size })
+
+      // 2. Сразу отправляем стартовое сообщение — AI генерирует первую часть
+      setPhase('starting')
+      await api.addMessage(userId, 'Начни историю')
+
+      // 3. Переходим в чат — первая часть уже готова
       nav('/tale')
     } catch (err) {
-      // Если 422 с missing_fields — направляем обратно в профиль
+      setPhase('idle')
       if (err.message.toLowerCase().includes('профиль')) {
         nav('/profile')
       } else {
         setError(err.message)
       }
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -53,6 +67,14 @@ export default function TaleCreatePage() {
 
         {error && <div className="alert alert-error">{error}</div>}
 
+        {/* Статус генерации */}
+        {loading && (
+          <div className="alert alert-warning" style={{ display: 'flex', alignItems: 'center', gap: '.75rem' }}>
+            <span className="spinner" />
+            {STATUS[phase]}
+          </div>
+        )}
+
         <form onSubmit={handleCreate}>
           <div className="field">
             <label>Название</label>
@@ -60,12 +82,13 @@ export default function TaleCreatePage() {
               type="text" value={form.name}
               onChange={e => set('name')(e.target.value)}
               placeholder="Как назовём историю?" maxLength={100}
+              disabled={loading}
             />
           </div>
 
           <div className="field">
             <label>Жанр</label>
-            <select value={form.genre} onChange={e => set('genre')(e.target.value)}>
+            <select value={form.genre} onChange={e => set('genre')(e.target.value)} disabled={loading}>
               {GENRES.map(g => <option key={g} value={g}>{g}</option>)}
             </select>
           </div>
@@ -76,8 +99,9 @@ export default function TaleCreatePage() {
               {SIZES.map(s => (
                 <div
                   key={s.value}
-                  className={`size-card${form.size === s.value ? ' selected' : ''}`}
-                  onClick={() => set('size')(s.value)}
+                  className={`size-card${form.size === s.value ? ' selected' : ''}${loading ? ' disabled' : ''}`}
+                  onClick={() => !loading && set('size')(s.value)}
+                  style={loading ? { pointerEvents: 'none', opacity: .5 } : {}}
                 >
                   <span className="size-icon">{s.icon}</span>
                   <span className="size-name">{s.name}</span>
@@ -87,13 +111,22 @@ export default function TaleCreatePage() {
             </div>
           </div>
 
-          <button type="submit" className="btn btn-primary" style={{ marginTop: '.5rem' }} disabled={loading}>
-            {loading ? <><span className="spinner" /> Создаём…</> : '✦ Начать сказку'}
+          <button
+            type="submit"
+            className="btn btn-primary"
+            style={{ marginTop: '.5rem' }}
+            disabled={loading}
+          >
+            {loading
+              ? <><span className="spinner" /> {STATUS[phase]}</>
+              : '✦ Начать сказку'}
           </button>
         </form>
 
         <div className="orn">✦</div>
-        <button className="btn btn-ghost" onClick={() => nav('/profile')}>← Назад в профиль</button>
+        <button className="btn btn-ghost" onClick={() => nav('/profile')} disabled={loading}>
+          ← Назад в профиль
+        </button>
       </div>
     </div>
   )

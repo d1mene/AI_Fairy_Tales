@@ -49,9 +49,8 @@ class TaleService:
             "assistant_response": bot_response
         }
 
-        content_list = tale.content if tale.content else []
-        content_list.append(new_part)
-        tale.content = content_list
+        # SQLAlchemy не детектирует мутацию JSON через .append() — нужен новый объект
+        tale.content = (tale.content or []) + [new_part]
         await db.commit()
 
         return {
