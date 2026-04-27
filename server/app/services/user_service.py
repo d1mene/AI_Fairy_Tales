@@ -7,6 +7,23 @@ from app.services.register_service import get_password_hash
 
 class UserService:
     @staticmethod
+    def is_profile_complete(user: "User") -> tuple[bool, list[str]]:
+        """
+        Проверяет, заполнены ли поля профиля, которые не обязательны при регистрации.
+        Возвращает (True, []) если всё заполнено, иначе (False, [список_пустых_полей]).
+        """
+        missing = []
+        if not (user.name and user.name.strip()):
+            missing.append("name")
+        if not user.age or user.age <= 0:
+            missing.append("age")
+        if user.sex is None:
+            missing.append("sex")
+        if not (user.hobby and user.hobby.strip()):
+            missing.append("hobby")
+        return (len(missing) == 0, missing)
+
+    @staticmethod
     async def get_user(db: AsyncSession, user_id: int) -> User | None:
         result = await db.execute(select(User).where(User.id == user_id))
         return result.scalar_one_or_none()

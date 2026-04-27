@@ -1,3 +1,4 @@
+from typing import Optional
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import Integer, String, Enum as SQLAlchemyEnum
 from app.db.base import Base
@@ -32,4 +33,4 @@ class User(Base):
     role: Mapped[UserRole] =  mapped_column(SQLAlchemyEnum(UserRole), default=UserRole.USER)
     sex: Mapped[Sex] = mapped_column(SQLAlchemyEnum(Sex))
     
-    tale: Mapped['Tale'] = relationship(back_populates="user", uselist=False)
+    tale: Mapped[Optional["Tale"]] = relationship(back_populates="user", uselist=False)
