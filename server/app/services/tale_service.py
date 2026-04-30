@@ -1,8 +1,11 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm.attributes import flag_modified
+
 from app.models.tale import Tale
+from app.models.user import User
 from app.schemas.tale import TaleCreate, TaleSizeEnum
+from app.services.ai_service import AIService
 
 
 class TaleService:
@@ -13,6 +16,7 @@ class TaleService:
             TaleSizeEnum.MEDIUM: 16,
             TaleSizeEnum.LARGE:  32,
         }
+        self._ai_service = AIService()
 
     async def create_tale(self, db: AsyncSession, user_id: int, tale_data: TaleCreate) -> Tale:
         result = await db.execute(select(Tale).where(Tale.user_id == user_id))
@@ -37,8 +41,19 @@ class TaleService:
         result = await db.execute(select(Tale).where(Tale.user_id == user_id))
         return result.scalar_one_or_none()
 
-    async def add_message(self, db: AsyncSession, tale: Tale, user_message: str) -> dict:
-        # Читаем актуальное состояние из БД (на случай кэша сессии)
+    async def add_message(
+        self,
+        db: AsyncSession,
+        tale: Tale,
+        user_message: str,
+        user: User,
+    ) -> dict:
+        """
+        Генерирует ответ модели на сообщение пользователя и сохраняет в историю сказки.
+
+        Параметр user необходим для формирования контекста (пол, возраст, хобби),
+        аналогично тому, как в старом боте get_prompt() читал поля пользователя из БД.
+        """
         await db.refresh(tale)
 
         current_stage = len(tale.content)
@@ -46,21 +61,16 @@ class TaleService:
         if current_stage >= tale.size:
             raise ValueError("Сказка уже закончена")
 
-        bot_response = (
-            f"[ВРЕМЕННЫЙ ОТВЕТ] Часть {current_stage + 1} из {tale.size}: {user_message}"
-        )
+        bot_response = await self._ai_service.generate_response(user, tale, user_message)
 
         new_part = {
-            "part_number": current_stage + 1,
-            "user_message": user_message,
+            "part_number":        current_stage + 1,
+            "user_message":       user_message,
             "assistant_response": bot_response,
         }
 
-
         tale.content = list(tale.content) + [new_part]
-
         flag_modified(tale, "content")
-
         await db.commit()
 
         return {
