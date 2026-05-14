@@ -10,5 +10,6 @@ class Settings:
     AI_SERVICE_URL: str = os.getenv("AI_SERVICE_URL", "http://ai-service:8001")
     AI_TEMPERATURE: float = 1.0
     DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY")
+    SECRET_KEY: str = os.getenv("SECRET_KEY")
 
 settings = Settings()

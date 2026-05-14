@@ -1,8 +1,9 @@
 from jose import jwt
 from datetime import datetime, timedelta
+from app.config import settings
 
-SECRET_KEY = "secret" #потом в env бахнем
-ALGORITHM = "HS256"  #ну и это наверное
+SECRET_KEY = settings.SECRET_KEY
+ALGORITHM = "HS256"
 
 def create_access_token(user_id: int):
     payload = {
