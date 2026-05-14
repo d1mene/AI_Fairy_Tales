@@ -2,21 +2,20 @@ networks:
   fairy_tales_network:
     driver: bridge
 
+volumes:
+  mysql_data:
+
 services:
   server:
     build: ./server
     container_name: fastapi_server
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     depends_on:
       db:
         condition: service_healthy
     env_file:
       - env/mysql.env
-    environment:
-      - DATABASE_URL=mysql+aiomysql://user:password@db:3306/db
-      - SECRET_KEY=my-super-secret-key-for-development
-      - DEBUG=True
     networks:
       - fairy_tales_network
     restart: always
@@ -27,7 +26,9 @@ services:
     env_file:
       - env/mysql.env
     expose:
-      - 3306
+      - "3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
     restart: always
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD"]
@@ -37,3 +38,14 @@ services:
       start_period: 10s
     networks:
       - fairy_tales_network
+
+  client:
+    build: ./client
+    container_name: frontend_client
+    ports:
+      - "80:80"
+    depends_on:
+      - server
+    networks:
+      - fairy_tales_network
+    restart: always
